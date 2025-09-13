@@ -5,6 +5,8 @@
 using namespace winrt;
 using namespace Windows::UI::Xaml;
 
+const uint32_t c_metersToMillimetersConversion = 1000;
+
 namespace winrt::LampArrayGDKBitmap::implementation
 {
     MainPage::MainPage()
@@ -100,14 +102,13 @@ namespace winrt::LampArrayGDKBitmap::implementation
     void MainPage::LampArrayContext::Initialize()
     {
         CalculateOrientationAndBottomRightCorner();
+        FindBoundingBoxesForAllLamps();
     }
 
     void MainPage::LampArrayContext::CalculateOrientationAndBottomRightCorner()
     {
         LampArrayPosition boundingBox{};
         m_lampArray->GetBoundingBox(&boundingBox);
-
-        const uint32_t c_metersToMillimetersConversion = 1000;
 
         boundingBox.xInMeters *= c_metersToMillimetersConversion;
         boundingBox.yInMeters *= c_metersToMillimetersConversion;
@@ -138,8 +139,68 @@ namespace winrt::LampArrayGDKBitmap::implementation
         m_lampArrayBottomRight = TransformToOrientation(boundingBox);
     }
 
+    void MainPage::LampArrayContext::FindBoundingBoxesForAllLamps()
+    {
+        auto lampCount = m_lampArray->GetLampCount();
+        if (lampCount == 0) { return; }
+
+        std::vector<KDTree::Data> looseKdTreeNodes;
+        looseKdTreeNodes.resize(lampCount);
+
+        for (auto i = 0u; i < lampCount; i++)
+        {
+            wil::com_ptr_nothrow<ILampInfo> lampInfo;
+            THROW_IF_FAILED(m_lampArray->GetLampInfo(i, &lampInfo));
+
+            LampArrayPosition position3D{};
+            lampInfo->GetPosition(&position3D);
+
+            // All positions are in meters, convert to millimeters
+            LampArrayPosition position2D = TransformToOrientation(position3D);
+
+            position2D.xInMeters *= c_metersToMillimetersConversion;
+            position2D.yInMeters *= c_metersToMillimetersConversion;
+
+            // Push in the loose data nodes into the k-d tree, still needs to be generated
+            KDTree::Data data{};
+            data.point.values[0] = static_cast<int32_t>(position2D.xInMeters);
+            data.point.values[1] = static_cast<int32_t>(position2D.yInMeters);
+            data.indexBoundingBox = i;
+            looseKdTreeNodes[i] = data;
+        }
+
+        // Makes sure that all the bounding boxes are clamped to the published device limits
+        const BoundingBox globalBoundingBox = {
+            0,
+            0,
+            static_cast<int32_t>(m_lampArrayBottomRight.xInMeters),
+            static_cast<int32_t>(m_lampArrayBottomRight.yInMeters) };
+
+        KDTree::GenerateAllBoundingBoxes(looseKdTreeNodes, globalBoundingBox, m_lampBoxes);
+    }
+
+    void MainPage::LampArrayContext::FindBoundingBoxesForSelectedLamps()
+    {
+    }
+
     LampArrayPosition MainPage::LampArrayContext::TransformToOrientation(const LampArrayPosition& position)
     {
-        return LampArrayPosition();
+        LampArrayPosition ret{};
+        switch (m_orientation)
+        {
+        case LampArrayBitmapOrientation::YZPlane:
+            ret.xInMeters = position.yInMeters;
+            ret.yInMeters = position.zInMeters;
+            break;
+        case LampArrayBitmapOrientation::XZPlane:
+            ret.xInMeters = position.xInMeters;
+            ret.yInMeters = position.zInMeters;
+            break;
+        case LampArrayBitmapOrientation::XYPlane:
+            ret.xInMeters = position.xInMeters;
+            ret.yInMeters = position.yInMeters;
+            break;
+        }
+        return ret;
     }
 }

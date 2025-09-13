@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "MainPage.g.h"
+#include "KDTree.h"
 
 namespace winrt::LampArrayGDKBitmap::implementation
 {
@@ -33,11 +34,26 @@ namespace winrt::LampArrayGDKBitmap::implementation
 
         private:
             void CalculateOrientationAndBottomRightCorner();
+            void FindBoundingBoxesForAllLamps();
+            void FindBoundingBoxesForSelectedLamps();
+
             LampArrayPosition TransformToOrientation(const LampArrayPosition& position);
 
             wil::com_ptr_nothrow<ILampArray> m_lampArray;
+
+            // Which plane the bitmap will render on.
             LampArrayBitmapOrientation m_orientation{};
+
+            // Position of the bottom right corner of the LampArray boundingbox for this bitmap
+            // No need for the top-left as it will always be 0,0
             LampArrayPosition m_lampArrayBottomRight{};
+
+            // Bounding boxes for every Lamp.
+            std::vector<BoundingBox> m_lampBoxes;
+
+            // Bounding boxes for just those Lamps selected by this effect.
+            // Origin is zero'd to that of the encompassing box.
+            std::vector<BoundingBox> m_selectedLampBoxes;
         };
 
         void DisplayBitmapOnLampArrays();
